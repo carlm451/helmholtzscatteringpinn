@@ -18,14 +18,18 @@ class ScatteringDomain:
             mask = mask | (dist < r)
         return mask
 
-    def sample_interior(self, n, strategy="uniform", alpha=0.5, outer_boundary="square"):
+    def sample_interior(self, n, strategy="uniform", alpha=0.5, outer_boundary="square",
+                         cluster_radius=None):
         """Sample n points in domain, excluding scatterer interiors.
 
         Args:
-            strategy: "uniform" or "radial_bias"
+            strategy: "uniform", "radial_bias", or "cluster_bias"
             alpha: radial bias exponent (used when strategy="radial_bias")
             outer_boundary: "square" or "circle" — determines domain shape
+            cluster_radius: radius of scatterer cluster (used for cluster_bias)
         """
+        if strategy == "cluster_bias":
+            return self._sample_interior_cluster_bias(n, outer_boundary, cluster_radius)
         if strategy == "radial_bias":
             return self._sample_interior_radial(n, alpha, outer_boundary)
         return self._sample_interior_uniform(n, outer_boundary)
@@ -65,7 +69,7 @@ class ScatteringDomain:
 
         Uses inverse CDF: r = (a^{2-alpha} + U * (R^{2-alpha} - a^{2-alpha}))^{1/(2-alpha)}
         """
-        a = self.scatterers[0][2]  # scatterer radius
+        a = max(s[2] for s in self.scatterers)  # largest scatterer radius
         # For square domain, R must reach corners at L*sqrt(2)
         R = self.L if outer_boundary == "circle" else self.L * math.sqrt(2)
         exp = 2 - alpha
@@ -102,6 +106,77 @@ class ScatteringDomain:
         x = torch.cat(points_x).requires_grad_(True)
         y = torch.cat(points_y).requires_grad_(True)
         return {"x": x, "y": y}
+
+    def _sample_interior_cluster_bias(self, n, outer_boundary="circle",
+                                        cluster_radius=None, near_fraction=0.6):
+        """Two-zone sampling: dense near cluster, sparse in far field.
+
+        Near-field (near_fraction): uniform in disk of radius 1.5*cluster_radius
+        Far-field (1-near_fraction): uniform in remaining domain
+        """
+        R_near = 1.5 * (cluster_radius or 1.0)
+        n_near = int(n * near_fraction)
+        n_far = n - n_near
+
+        near = self._sample_disk_excluding_scatterers(n_near, R_near)
+        far = self._sample_annulus_or_outer(n_far, R_near, outer_boundary)
+
+        x = torch.cat([near["x"], far["x"]]).requires_grad_(True)
+        y = torch.cat([near["y"], far["y"]]).requires_grad_(True)
+        return {"x": x, "y": y}
+
+    def _sample_disk_excluding_scatterers(self, n, R):
+        """Rejection-sample uniformly in disk of radius R, excluding scatterer interiors."""
+        points_x = []
+        points_y = []
+        remaining = n
+
+        while remaining > 0:
+            n_try = int(remaining * 2.0) + 100
+            r = R * torch.sqrt(torch.rand(n_try, device=self.device))
+            theta = 2 * math.pi * torch.rand(n_try, device=self.device)
+            x = r * torch.cos(theta)
+            y = r * torch.sin(theta)
+            valid = ~self.is_inside_any_scatterer(x, y)
+            x_valid = x[valid]
+            y_valid = y[valid]
+            take = min(remaining, len(x_valid))
+            points_x.append(x_valid[:take])
+            points_y.append(y_valid[:take])
+            remaining -= take
+
+        return {"x": torch.cat(points_x), "y": torch.cat(points_y)}
+
+    def _sample_annulus_or_outer(self, n, R_inner, outer_boundary):
+        """Sample uniformly outside disk of radius R_inner but within domain boundary."""
+        points_x = []
+        points_y = []
+        remaining = n
+
+        while remaining > 0:
+            n_try = int(remaining * 2.0) + 100
+            if outer_boundary == "circle":
+                # Uniform in disk of radius L
+                r = self.L * torch.sqrt(torch.rand(n_try, device=self.device))
+                theta = 2 * math.pi * torch.rand(n_try, device=self.device)
+                x = r * torch.cos(theta)
+                y = r * torch.sin(theta)
+            else:
+                x = (2 * torch.rand(n_try, device=self.device) - 1) * self.L
+                y = (2 * torch.rand(n_try, device=self.device) - 1) * self.L
+
+            r2 = x**2 + y**2
+            outside_near = r2 >= R_inner**2
+            not_in_scat = ~self.is_inside_any_scatterer(x, y)
+            valid = outside_near & not_in_scat
+            x_valid = x[valid]
+            y_valid = y[valid]
+            take = min(remaining, len(x_valid))
+            points_x.append(x_valid[:take])
+            points_y.append(y_valid[:take])
+            remaining -= take
+
+        return {"x": torch.cat(points_x), "y": torch.cat(points_y)}
 
     def sample_scatterer_boundary(self, n_per_scatterer):
         """Sample points on scatterer surfaces with outward normals."""

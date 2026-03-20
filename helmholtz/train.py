@@ -42,6 +42,7 @@ def _sample_points(domain, config):
         strategy=config.sampling_strategy,
         alpha=config.radial_alpha,
         outer_boundary=config.outer_boundary,
+        cluster_radius=getattr(config, 'cluster_radius', None),
     )
     boundary = domain.sample_scatterer_boundary(config.n_boundary)
     if config.outer_boundary == "circle":
@@ -132,6 +133,7 @@ def train_adam(model, domain, config, analytic_fn=None):
                     strategy=config.sampling_strategy,
                     alpha=config.radial_alpha,
                     outer_boundary=config.outer_boundary,
+                    cluster_radius=getattr(config, 'cluster_radius', None),
                 )
                 residuals = _compute_pointwise_pde_residual(model, candidates, config.k)
                 prob = residuals ** config.rad_k + config.rad_c
@@ -147,6 +149,7 @@ def train_adam(model, domain, config, analytic_fn=None):
                     strategy=config.sampling_strategy,
                     alpha=config.radial_alpha,
                     outer_boundary=config.outer_boundary,
+                    cluster_radius=getattr(config, 'cluster_radius', None),
                 )
             interior = _blend_interior(interior, new_interior)
 

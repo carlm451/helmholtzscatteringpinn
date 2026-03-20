@@ -46,6 +46,10 @@ def parse_args():
     # Outer boundary / ABC
     parser.add_argument("--outer-boundary", type=str, default=None, help="Outer boundary shape: square or circle")
     parser.add_argument("--abc-order", type=int, default=None, help="ABC order: 1 or 2 (BGT2)")
+    # Honeycomb structured scatterer
+    parser.add_argument("--honeycomb", action="store_true", help="Use honeycomb lattice scatterer")
+    parser.add_argument("--honeycomb-rs", type=float, default=None, help="Small circle radius")
+    parser.add_argument("--honeycomb-d", type=float, default=None, help="Lattice constant")
     # wandb
     parser.add_argument("--run-name", type=str, default=None, help="wandb run name override")
     return parser.parse_args()
@@ -62,8 +66,16 @@ def get_config(args):
     if args.no_wandb:
         kwargs["use_wandb"] = False
 
+    if args.honeycomb:
+        # Honeycomb mode: use factory with overrides
+        hc_kwargs = dict(ka=ka, **kwargs)
+        if args.honeycomb_rs is not None:
+            hc_kwargs["honeycomb_r_s"] = args.honeycomb_rs
+        if args.honeycomb_d is not None:
+            hc_kwargs["honeycomb_d"] = args.honeycomb_d
+        config = HelmholtzConfig.honeycomb_ka3(**hc_kwargs)
     # Use factory methods for standard ka values
-    if abs(ka - math.pi) < 0.01:
+    elif abs(ka - math.pi) < 0.01:
         config = HelmholtzConfig.ka_pi(**kwargs)
     elif abs(ka - 2 * math.pi) < 0.01:
         config = HelmholtzConfig.ka_2pi(**kwargs)
@@ -147,6 +159,76 @@ def run_analytic_only(config, output_dir):
         print(f"  Saved: {path}")
 
 
+def _save_pinn_only_plots(model, domain, config, output_dir="outputs"):
+    """Generate field plots for geometries without an analytic solution (e.g. honeycomb)."""
+    import numpy as np
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    import os
+
+    os.makedirs(output_dir, exist_ok=True)
+    L = config.L
+    grid_size = 300
+    ka_str = f"ka{config.ka:.2f}"
+
+    x_flat, y_flat, valid = domain.sample_test_grid(grid_size)
+    if getattr(config, "outer_boundary", "square") == "circle":
+        valid = valid & (x_flat**2 + y_flat**2 <= L**2)
+
+    with torch.no_grad():
+        model.eval()
+        u_pred, v_pred = model(x_flat, y_flat)
+        model.train()
+
+    u = u_pred.cpu().numpy()
+    v = v_pred.cpu().numpy()
+    valid_np = valid.cpu().numpy()
+    u[~valid_np] = np.nan
+    v[~valid_np] = np.nan
+
+    # Add incident field for total field
+    x_np = x_flat.cpu().numpy()
+    inc_re = np.cos(config.k * x_np)
+    inc_im = np.sin(config.k * x_np)
+    u_total = u + inc_re
+    v_total = v + inc_im
+    u_total[~valid_np] = np.nan
+    v_total[~valid_np] = np.nan
+    mag_total = np.sqrt(u_total**2 + v_total**2)
+
+    x_arr = np.linspace(-L, L, grid_size)
+    y_arr = np.linspace(-L, L, grid_size)
+    theta_c = np.linspace(0, 2 * np.pi, 100)
+    saved = []
+
+    for name, values, cscale, zm in [
+        ("real_scattered", u.reshape(grid_size, grid_size), "RdBu_r", 0),
+        ("real_total", u_total.reshape(grid_size, grid_size), "RdBu_r", 0),
+        ("magnitude_total", mag_total.reshape(grid_size, grid_size), "Viridis", None),
+    ]:
+        fig = go.Figure()
+        fig.add_trace(go.Heatmap(
+            z=values, x=x_arr, y=y_arr,
+            colorscale=cscale, zmid=zm,
+        ))
+        for cx, cy, r in config.scatterers:
+            fig.add_trace(go.Scatter(
+                x=cx + r * np.cos(theta_c), y=cy + r * np.sin(theta_c),
+                mode="lines", line=dict(color="white", width=1.5), showlegend=False,
+            ))
+        fig.update_layout(
+            title=f"Honeycomb PINN — {name} — ka={config.ka:.2f}",
+            xaxis_title="x", yaxis_title="y",
+            xaxis=dict(scaleanchor="y"), width=700, height=600,
+        )
+        path = os.path.join(output_dir, f"{ka_str}_honeycomb_{name}.html")
+        fig.write_html(path)
+        saved.append(path)
+        print(f"  Saved: {path}")
+
+    return saved
+
+
 def main():
     args = parse_args()
     config = get_config(args)
@@ -159,6 +241,9 @@ def main():
           f"ABC order={config.abc_order}, RAD={config.use_rad}")
 
     if args.analytic_only:
+        if config.use_honeycomb:
+            print("No analytic solution for honeycomb geometry. Skipping.")
+            return
         print("Generating analytic solution plots...")
         run_analytic_only(config, args.output_dir)
         return
@@ -168,17 +253,24 @@ def main():
     model = HelmholtzPINN(config).to(config.device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parameters: {n_params:,}")
+    if config.use_honeycomb:
+        print(f"  Honeycomb: {len(config.scatterers)} scatterers, "
+              f"r_s={config.scatterers[0][2]:.3f}, cluster_radius={config.cluster_radius:.3f}")
 
-    analytic_fn = scattered_field
+    analytic_fn = None if config.use_honeycomb else scattered_field
 
     if args.eval_only:
         print(f"Loading checkpoint: {args.eval_only}")
         model.load_state_dict(torch.load(args.eval_only, map_location=config.device, weights_only=True))
-        metrics = evaluate_against_analytic(model, domain, config, analytic_fn)
-        print(f"  L2 relative error: {metrics['l2_rel']:.6e}")
-        print(f"  Max error: {metrics['max_err']:.6e}")
-        print("Generating zoom report...")
-        create_zoom_report(model, domain, config, analytic_fn, args.output_dir)
+        if analytic_fn is not None:
+            metrics = evaluate_against_analytic(model, domain, config, analytic_fn)
+            print(f"  L2 relative error: {metrics['l2_rel']:.6e}")
+            print(f"  Max error: {metrics['max_err']:.6e}")
+            print("Generating zoom report...")
+            create_zoom_report(model, domain, config, analytic_fn, args.output_dir)
+        else:
+            print("No analytic solution for honeycomb — generating PINN-only plots...")
+            _save_pinn_only_plots(model, domain, config, args.output_dir)
         return
 
     # Training
@@ -193,16 +285,19 @@ def main():
         model = train(model, domain, config, analytic_fn, run_name=run_name)
 
     # Final evaluation
-    print("\n=== Final Evaluation ===")
-    metrics = evaluate_against_analytic(model, domain, config, analytic_fn)
-    print(f"  L2 relative error: {metrics['l2_rel']:.6e}")
-    print(f"  L2 absolute error: {metrics['l2_abs']:.6e}")
-    print(f"  Max error:         {metrics['max_err']:.6e}")
-    print(f"  Mean error:        {metrics['mean_err']:.6e}")
-
-    # Generate zoom report
-    print("\nGenerating zoom report...")
-    create_zoom_report(model, domain, config, analytic_fn, args.output_dir)
+    if analytic_fn is not None:
+        print("\n=== Final Evaluation ===")
+        metrics = evaluate_against_analytic(model, domain, config, analytic_fn)
+        print(f"  L2 relative error: {metrics['l2_rel']:.6e}")
+        print(f"  L2 absolute error: {metrics['l2_abs']:.6e}")
+        print(f"  Max error:         {metrics['max_err']:.6e}")
+        print(f"  Mean error:        {metrics['mean_err']:.6e}")
+        print("\nGenerating zoom report...")
+        create_zoom_report(model, domain, config, analytic_fn, args.output_dir)
+    else:
+        print("\n=== Honeycomb — no analytic reference ===")
+        print("Generating PINN-only field plots...")
+        _save_pinn_only_plots(model, domain, config, args.output_dir)
 
     print("\nDone!")
 
