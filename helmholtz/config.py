@@ -142,6 +142,7 @@ class HelmholtzConfig:
             lambda_bc=20.0,
             outer_boundary="circle", abc_order=2,
             adam_epochs=20000, lbfgs_epochs=300,
+            wandb_project="helmholtz-pinn-honeycomb",
         )
         defaults.update(kwargs)
         return cls(**defaults)

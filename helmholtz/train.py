@@ -18,7 +18,7 @@ def init_wandb(config, run_name=None):
     run = wandb.init(
         project=config.wandb_project,
         config=config.to_dict(),
-        name=run_name or f"ka={config.ka:.2f}",
+        name=run_name or _checkpoint_tag(config),
     )
     return run
 
@@ -52,17 +52,31 @@ def _sample_points(domain, config):
     return interior, boundary, outer
 
 
+def _checkpoint_tag(config):
+    """Build a descriptive tag for checkpoint filenames and artifact names."""
+    tag = f"ka{config.ka:.2f}_L{config.L:.1f}"
+    if getattr(config, "use_honeycomb", False):
+        tag = f"hc_{tag}"
+    if getattr(config, "outer_boundary", "square") == "circle":
+        tag += "_circ"
+    if getattr(config, "abc_order", 1) == 2:
+        tag += "_bgt2"
+    return tag
+
+
 def save_checkpoint(model, config, phase, output_dir="checkpoints", log_to_wandb=False):
     os.makedirs(output_dir, exist_ok=True)
-    path = os.path.join(output_dir, f"helmholtz_ka{config.ka:.2f}_{phase}.pt")
+    tag = _checkpoint_tag(config)
+    path = os.path.join(output_dir, f"helmholtz_{tag}_{phase}.pt")
     torch.save(model.state_dict(), path)
     print(f"  Checkpoint saved: {path}")
 
     if log_to_wandb and wandb is not None and wandb.run is not None:
         artifact = wandb.Artifact(
-            f"helmholtz-ka{config.ka:.2f}-{phase}",
+            f"helmholtz-{tag}-{phase}",
             type="model",
-            metadata={"ka": config.ka, "L": config.L, "phase": phase},
+            metadata={"ka": config.ka, "L": config.L, "phase": phase,
+                       "honeycomb": getattr(config, "use_honeycomb", False)},
         )
         artifact.add_file(path)
         wandb.log_artifact(artifact)
