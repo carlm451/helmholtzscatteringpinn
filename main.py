@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--L", type=float, default=3.0, help="Domain half-size")
     parser.add_argument("--adam-epochs", type=int, default=None, help="Override Adam epochs")
     parser.add_argument("--lbfgs-epochs", type=int, default=None, help="Override L-BFGS epochs")
+    parser.add_argument("--adam-lr", type=float, default=None, help="Adam learning rate (default: 1e-3)")
     parser.add_argument("--no-lbfgs", action="store_true", help="Skip L-BFGS phase")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging")
     parser.add_argument("--device", type=str, default=None, help="Device: mps, cuda, cpu")
@@ -72,6 +73,8 @@ def get_config(args):
         config = HelmholtzConfig(ka=ka, **kwargs)
 
     # CLI overrides
+    if args.adam_lr is not None:
+        config.adam_lr = args.adam_lr
     if args.adam_epochs is not None:
         config.adam_epochs = args.adam_epochs
     if args.lbfgs_epochs is not None:
