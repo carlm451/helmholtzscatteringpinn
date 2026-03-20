@@ -43,6 +43,11 @@ def evaluate_against_analytic(model, domain, config, analytic_fn,
     u_exact = u_exact[valid_mask]
     v_exact = v_exact[valid_mask]
 
+    if len(u_pred) == 0:
+        model.train()
+        return {"l2_rel": float("nan"), "l2_abs": float("nan"),
+                "max_err": float("nan"), "mean_err": float("nan")}
+
     # Error metrics
     err_u = u_pred - u_exact
     err_v = v_pred - v_exact
@@ -53,8 +58,8 @@ def evaluate_against_analytic(model, domain, config, analytic_fn,
     l2_exact = np.sqrt(np.mean(u_exact ** 2 + v_exact ** 2))
     l2_rel = l2_abs / (l2_exact + 1e-16)
 
-    max_err = np.max(err_magnitude)
-    mean_err = np.mean(err_magnitude)
+    max_err = float(np.max(err_magnitude))
+    mean_err = float(np.mean(err_magnitude))
 
     model.train()
     return {

@@ -73,7 +73,7 @@ class HelmholtzConfig:
         if self.fourier_sigma is None:
             self.fourier_sigma = self.k
         if self.n_series_terms is None:
-            self.n_series_terms = int(30 + self.ka ** 1.01) + 5
+            self.n_series_terms = int(self.ka + 20)
         if self.device is None:
             if torch.backends.mps.is_available():
                 self.device = "mps"

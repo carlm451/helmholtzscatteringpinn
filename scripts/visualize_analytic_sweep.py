@@ -34,7 +34,7 @@ GRID_SIZE = 300  # Points per axis
 
 def _n_terms(ka):
     """Series truncation matching config.py logic."""
-    return int(30 + ka ** 1.01) + 5
+    return int(ka + 20)
 
 
 def generate_ka_sweep_grid(ka_values, L, grid_size):
