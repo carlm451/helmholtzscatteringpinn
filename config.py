@@ -27,11 +27,21 @@ class HelmholtzConfig:
     n_boundary: int = 200
     n_outer: int = 400
     resample_every: int = 2000
+    sampling_strategy: str = "uniform"      # "uniform", "radial_bias", "rad"
+    radial_alpha: float = 0.5               # bias exponent for radial sampling
+    use_rad: bool = False                   # enable RAD adaptive resampling
+    rad_k: float = 1.0                      # RAD concentration parameter
+    rad_c: float = 0.0                      # RAD exploration parameter
+
+    # Outer boundary
+    outer_boundary: str = "square"          # "square" or "circle"
+    abc_order: int = 1                      # 1 or 2 (BGT2)
 
     # Adam
     adam_lr: float = 1e-3
-    adam_epochs: int = 15000
+    adam_epochs: int = 10000
     scheduler: str = "cosine"
+    grad_clip: float = 1.0
 
     # L-BFGS
     lbfgs_lr: float = 1.0

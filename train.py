@@ -12,13 +12,13 @@ except ImportError:
     wandb = None
 
 
-def init_wandb(config):
+def init_wandb(config, run_name=None):
     if not config.use_wandb or wandb is None:
         return None
     run = wandb.init(
         project=config.wandb_project,
         config=config.to_dict(),
-        name=f"ka={config.ka:.2f}",
+        name=run_name or f"ka={config.ka:.2f}",
     )
     return run
 
@@ -36,10 +36,18 @@ def _evaluate_and_log(model, domain, config, analytic_fn, step, phase):
 
 
 def _sample_points(domain, config):
-    """Sample all point sets for training."""
-    interior = domain.sample_interior(config.n_interior)
+    """Sample all point sets for training, dispatching based on config."""
+    interior = domain.sample_interior(
+        config.n_interior,
+        strategy=config.sampling_strategy,
+        alpha=config.radial_alpha,
+        outer_boundary=config.outer_boundary,
+    )
     boundary = domain.sample_scatterer_boundary(config.n_boundary)
-    outer = domain.sample_outer_boundary(config.n_outer)
+    if config.outer_boundary == "circle":
+        outer = domain.sample_circular_outer_boundary(config.n_outer)
+    else:
+        outer = domain.sample_outer_boundary(config.n_outer)
     return interior, boundary, outer
 
 
@@ -49,6 +57,41 @@ def save_checkpoint(model, config, phase, output_dir="checkpoints"):
     torch.save(model.state_dict(), path)
     print(f"  Checkpoint saved: {path}")
     return path
+
+
+def _blend_interior(old, new):
+    """Blend 50% old + 50% new interior points for smoother resampling."""
+    n = old["x"].shape[0]
+    half = n // 2
+    perm = torch.randperm(n, device=old["x"].device)
+    keep = perm[:half]
+    x = torch.cat([old["x"][keep].detach(), new["x"][:n - half]])
+    y = torch.cat([old["y"][keep].detach(), new["y"][:n - half]])
+    return {"x": x.requires_grad_(True), "y": y.requires_grad_(True)}
+
+
+def _compute_pointwise_pde_residual(model, points, k):
+    """Compute per-point PDE residual magnitude (no graph needed — for RAD sampling only)."""
+    x = points["x"].detach().requires_grad_(True)
+    y = points["y"].detach().requires_grad_(True)
+
+    u, v = model(x, y)
+    ones = torch.ones_like(u)
+
+    du_dx = torch.autograd.grad(u, x, ones, create_graph=True, retain_graph=True)[0]
+    du_dy = torch.autograd.grad(u, y, ones, create_graph=True, retain_graph=True)[0]
+    dv_dx = torch.autograd.grad(v, x, ones, create_graph=True, retain_graph=True)[0]
+    dv_dy = torch.autograd.grad(v, y, ones, create_graph=True, retain_graph=True)[0]
+
+    d2u_dx2 = torch.autograd.grad(du_dx, x, ones, create_graph=False, retain_graph=True)[0]
+    d2u_dy2 = torch.autograd.grad(du_dy, y, ones, create_graph=False, retain_graph=True)[0]
+    d2v_dx2 = torch.autograd.grad(dv_dx, x, ones, create_graph=False, retain_graph=True)[0]
+    d2v_dy2 = torch.autograd.grad(dv_dy, y, ones, create_graph=False, retain_graph=False)[0]
+
+    res_u = d2u_dx2 + d2u_dy2 + k ** 2 * u.detach()
+    res_v = d2v_dx2 + d2v_dy2 + k ** 2 * v.detach()
+
+    return torch.sqrt(res_u ** 2 + res_v ** 2).detach()
 
 
 def train_adam(model, domain, config, analytic_fn=None):
@@ -65,18 +108,43 @@ def train_adam(model, domain, config, analytic_fn=None):
         scheduler = None
 
     interior, boundary, outer = _sample_points(domain, config)
+    grad_clip = getattr(config, "grad_clip", 1.0)
 
     pbar = tqdm(range(1, config.adam_epochs + 1), desc="Adam", ncols=100)
     for epoch in pbar:
-        # Resample interior points periodically
+        # Resample interior points periodically (blended for stability)
         if epoch > 1 and epoch % config.resample_every == 0:
-            interior = domain.sample_interior(config.n_interior)
+            if config.use_rad:
+                # RAD: generate 3x candidates, sample proportional to residual
+                candidates = domain.sample_interior(
+                    config.n_interior * 3,
+                    strategy=config.sampling_strategy,
+                    alpha=config.radial_alpha,
+                    outer_boundary=config.outer_boundary,
+                )
+                residuals = _compute_pointwise_pde_residual(model, candidates, config.k)
+                prob = residuals ** config.rad_k + config.rad_c
+                prob = prob / prob.sum()
+                indices = torch.multinomial(prob, config.n_interior, replacement=True)
+                new_interior = {
+                    "x": candidates["x"].detach()[indices].requires_grad_(True),
+                    "y": candidates["y"].detach()[indices].requires_grad_(True),
+                }
+            else:
+                new_interior = domain.sample_interior(
+                    config.n_interior,
+                    strategy=config.sampling_strategy,
+                    alpha=config.radial_alpha,
+                    outer_boundary=config.outer_boundary,
+                )
+            interior = _blend_interior(interior, new_interior)
 
         optimizer.zero_grad()
         loss, loss_pde, loss_bc, loss_abc = total_loss(
             model, interior, boundary, outer, config.k, config
         )
         loss.backward()
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
         optimizer.step()
         if scheduler:
             scheduler.step()
@@ -90,6 +158,7 @@ def train_adam(model, domain, config, analytic_fn=None):
                 "loss/bc": loss_bc.item(),
                 "loss/abc": loss_abc.item(),
                 "lr": lr,
+                "grad_norm": grad_norm.item() if torch.is_tensor(grad_norm) else grad_norm,
                 "phase": 0,
             }
             _log(metrics, epoch, config)
@@ -170,9 +239,9 @@ def train_lbfgs(model, domain, config, analytic_fn=None, start_epoch=0):
     return model
 
 
-def train(model, domain, config, analytic_fn=None):
+def train(model, domain, config, analytic_fn=None, run_name=None):
     """Full training pipeline: Adam followed by L-BFGS."""
-    init_wandb(config)
+    init_wandb(config, run_name=run_name)
 
     model = train_adam(model, domain, config, analytic_fn)
     model = train_lbfgs(model, domain, config, analytic_fn,

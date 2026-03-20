@@ -18,22 +18,80 @@ class ScatteringDomain:
             mask = mask | (dist < r)
         return mask
 
-    def sample_interior(self, n):
-        """Sample n points in [-L, L]^2, excluding scatterer interiors.
+    def sample_interior(self, n, strategy="uniform", alpha=0.5, outer_boundary="square"):
+        """Sample n points in domain, excluding scatterer interiors.
 
-        Uses rejection sampling. Returns dict with x, y (requires_grad=True).
+        Args:
+            strategy: "uniform" or "radial_bias"
+            alpha: radial bias exponent (used when strategy="radial_bias")
+            outer_boundary: "square" or "circle" — determines domain shape
         """
+        if strategy == "radial_bias":
+            return self._sample_interior_radial(n, alpha, outer_boundary)
+        return self._sample_interior_uniform(n, outer_boundary)
+
+    def _sample_interior_uniform(self, n, outer_boundary="square"):
+        """Uniform sampling in square or circular domain."""
         points_x = []
         points_y = []
         remaining = n
 
         while remaining > 0:
-            # Oversample to account for rejection
             n_try = int(remaining * 1.5) + 100
-            x = (2 * torch.rand(n_try, device=self.device) - 1) * self.L
-            y = (2 * torch.rand(n_try, device=self.device) - 1) * self.L
+            if outer_boundary == "circle":
+                # Sample uniformly in disk of radius L
+                r = self.L * torch.sqrt(torch.rand(n_try, device=self.device))
+                theta = 2 * math.pi * torch.rand(n_try, device=self.device)
+                x = r * torch.cos(theta)
+                y = r * torch.sin(theta)
+            else:
+                x = (2 * torch.rand(n_try, device=self.device) - 1) * self.L
+                y = (2 * torch.rand(n_try, device=self.device) - 1) * self.L
             inside = self.is_inside_any_scatterer(x, y)
             valid = ~inside
+            x_valid = x[valid]
+            y_valid = y[valid]
+            take = min(remaining, len(x_valid))
+            points_x.append(x_valid[:take])
+            points_y.append(y_valid[:take])
+            remaining -= take
+
+        x = torch.cat(points_x).requires_grad_(True)
+        y = torch.cat(points_y).requires_grad_(True)
+        return {"x": x, "y": y}
+
+    def _sample_interior_radial(self, n, alpha=0.5, outer_boundary="square"):
+        """Radial-biased sampling: p(r) ~ r^{1-alpha}, concentrating points near scatterer.
+
+        Uses inverse CDF: r = (a^{2-alpha} + U * (R^{2-alpha} - a^{2-alpha}))^{1/(2-alpha)}
+        """
+        a = self.scatterers[0][2]  # scatterer radius
+        # For square domain, R must reach corners at L*sqrt(2)
+        R = self.L if outer_boundary == "circle" else self.L * math.sqrt(2)
+        exp = 2 - alpha
+
+        points_x = []
+        points_y = []
+        remaining = n
+        # For square domain, oversample more since we reject outside square
+        oversample = 1.8 if outer_boundary == "square" else 1.2
+
+        while remaining > 0:
+            n_try = int(remaining * oversample) + 100
+            U = torch.rand(n_try, device=self.device)
+            r = (a ** exp + U * (R ** exp - a ** exp)) ** (1.0 / exp)
+            theta = 2 * math.pi * torch.rand(n_try, device=self.device)
+            x = r * torch.cos(theta)
+            y = r * torch.sin(theta)
+
+            # Reject points outside domain
+            if outer_boundary == "square":
+                in_domain = (x.abs() <= self.L) & (y.abs() <= self.L)
+            else:
+                in_domain = (x ** 2 + y ** 2) <= R ** 2
+
+            inside_scat = self.is_inside_any_scatterer(x, y)
+            valid = in_domain & ~inside_scat
             x_valid = x[valid]
             y_valid = y[valid]
             take = min(remaining, len(x_valid))
@@ -67,6 +125,22 @@ class ScatteringDomain:
         nx = torch.cat(all_nx)
         ny = torch.cat(all_ny)
         return {"x": x, "y": y, "nx": nx, "ny": ny}
+
+    def sample_circular_outer_boundary(self, n_total, R=None):
+        """Sample points on circle of radius R with radial outward normals."""
+        if R is None:
+            R = self.L
+        theta = torch.linspace(0, 2 * math.pi, n_total + 1, device=self.device)[:-1]
+        x = R * torch.cos(theta)
+        y = R * torch.sin(theta)
+        nx = torch.cos(theta)  # radial outward normal
+        ny = torch.sin(theta)
+        return {
+            "x": x.requires_grad_(True),
+            "y": y.requires_grad_(True),
+            "nx": nx,
+            "ny": ny,
+        }
 
     def sample_outer_boundary(self, n_total):
         """Sample points on the outer box boundary [-L,L]^2 with outward normals."""

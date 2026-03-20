@@ -6,6 +6,17 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
 
+# Consistent plot styling across all outputs
+_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif"
+_TITLE_STYLE = dict(font=dict(size=15, color="#1a1a2e"), x=0.01, xanchor="left")
+_LAYOUT = dict(
+    font=dict(family=_FONT, size=13, color="#1a1a2e"),
+    paper_bgcolor="#f8f8fa",
+    plot_bgcolor="#ffffff",
+    margin=dict(t=56, b=48, l=56, r=28),
+    colorway=["#1a56db", "#dc2626", "#059669", "#d97706", "#7c3aed"],
+)
+
 
 def _scatterer_circle_trace(cx, cy, r, n_pts=100):
     """Create a Plotly trace for a scatterer circle outline."""
@@ -25,9 +36,9 @@ def plot_field_2d(values, x_range, y_range, title, scatterers=None,
     fig = go.Figure()
 
     fig.add_trace(go.Heatmap(
-        z=values.T,
-        x=np.linspace(x_range[0], x_range[1], values.shape[0]),
-        y=np.linspace(y_range[0], y_range[1], values.shape[1]),
+        z=values,
+        x=np.linspace(x_range[0], x_range[1], values.shape[1]),
+        y=np.linspace(y_range[0], y_range[1], values.shape[0]),
         colorscale=colorscale,
         zmid=zmid,
         colorbar=dict(title="Field"),
@@ -38,7 +49,8 @@ def plot_field_2d(values, x_range, y_range, title, scatterers=None,
             fig.add_trace(_scatterer_circle_trace(cx, cy, r))
 
     fig.update_layout(
-        title=title,
+        **_LAYOUT,
+        title=dict(text=title, **_TITLE_STYLE),
         xaxis_title="x",
         yaxis_title="y",
         xaxis=dict(scaleanchor="y", constrain="domain"),
@@ -117,13 +129,13 @@ def plot_comparison(model, domain, config, analytic_fn,
     vmax = max(np.nanmax(np.abs(pred)), np.nanmax(np.abs(exact)))
     for col, data in enumerate([pred, exact], 1):
         fig.add_trace(go.Heatmap(
-            z=data.T, x=x_arr, y=y_arr,
+            z=data, x=x_arr, y=y_arr,
             colorscale="RdBu_r", zmid=0, zmin=-vmax, zmax=vmax,
             showscale=(col == 2),
         ), row=1, col=col)
 
     fig.add_trace(go.Heatmap(
-        z=error.T, x=x_arr, y=y_arr,
+        z=error, x=x_arr, y=y_arr,
         colorscale="Hot_r",
         showscale=True,
     ), row=1, col=3)
@@ -139,7 +151,8 @@ def plot_comparison(model, domain, config, analytic_fn,
             ), row=1, col=col)
 
     fig.update_layout(
-        title=f"Helmholtz Scattering ka={config.ka:.2f} — {label}",
+        **_LAYOUT,
+        title=dict(text=f"Helmholtz Scattering ka={config.ka:.2f} — {label}", **_TITLE_STYLE),
         width=1500, height=500,
     )
     for i in range(1, 4):
@@ -179,7 +192,8 @@ def plot_line_cut(model, analytic_fn, config, x_values, y_value=0.0):
                              line=dict(width=2, dash="dash")))
 
     fig.update_layout(
-        title=f"Line cut y={y_value} — ka={config.ka:.2f}",
+        **_LAYOUT,
+        title=dict(text=f"Line cut y={y_value} — ka={config.ka:.2f}", **_TITLE_STYLE),
         xaxis_title="x", yaxis_title="|phi_total|",
         width=800, height=400,
     )
@@ -223,7 +237,7 @@ def create_zoom_report(model, domain, config, analytic_fn, output_dir="outputs")
     # 4. Poisson bright spot — line cut along y=0 behind scatterer
     x_vals = np.linspace(1.05, min(10, L), 300)
     fig = plot_line_cut(model, analytic_fn, config, x_vals, y_value=0.0)
-    fig.update_layout(title=f"Poisson Bright Spot — ka={config.ka:.2f}")
+    fig.update_layout(title=dict(text=f"Poisson Bright Spot — ka={config.ka:.2f}", **_TITLE_STYLE))
     path = os.path.join(output_dir, f"{ka_str}_poisson_bright_spot.html")
     fig.write_html(path)
     saved.append(path)
@@ -251,7 +265,7 @@ def create_zoom_report(model, domain, config, analytic_fn, output_dir="outputs")
                       line=dict(color="lime", width=2), row=1, col=1)
         fig.add_shape(type="rect", x0=x0, y0=y0, x1=x1, y1=y1,
                       line=dict(color="lime", width=2), row=1, col=2)
-    fig.update_layout(title=f"Overview with Zoom Regions — ka={config.ka:.2f}")
+    fig.update_layout(title=dict(text=f"Overview with Zoom Regions — ka={config.ka:.2f}", **_TITLE_STYLE))
     path = os.path.join(output_dir, f"{ka_str}_overview.html")
     fig.write_html(path)
     saved.append(path)

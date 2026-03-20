@@ -18,6 +18,11 @@ def evaluate_against_analytic(model, domain, config, analytic_fn,
     gs = grid_size or config.eval_grid_size
     x_flat, y_flat, valid = domain.sample_test_grid(gs, x_range, y_range)
 
+    # For circular domains, also exclude points outside the circle
+    if getattr(config, "outer_boundary", "square") == "circle":
+        r2 = x_flat ** 2 + y_flat ** 2
+        valid = valid & (r2 <= config.L ** 2)
+
     # PINN prediction
     u_pred, v_pred = model(x_flat, y_flat)
     u_pred = u_pred[valid].cpu().numpy()

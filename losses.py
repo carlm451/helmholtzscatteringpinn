@@ -97,13 +97,47 @@ def abc_loss(model, x, y, nx, ny, k):
     return torch.mean(res_real ** 2 + res_imag ** 2)
 
 
+def abc_loss_2nd_order(model, x, y, k):
+    """Second-order ABC (BGT2) on circular boundary: d(phi_s)/dr - ik*phi_s + phi_s/(2r) = 0.
+
+    On a circle, the outward normal is radial, so dn = dr.
+    Split into real/imag:
+        du/dr + k*v + u/(2r) = 0
+        dv/dr - k*u + v/(2r) = 0
+    """
+    u, v = model(x, y)
+    ones = torch.ones_like(u)
+
+    du_dx = torch.autograd.grad(u, x, ones, create_graph=True, retain_graph=True)[0]
+    du_dy = torch.autograd.grad(u, y, ones, create_graph=True, retain_graph=True)[0]
+    dv_dx = torch.autograd.grad(v, x, ones, create_graph=True, retain_graph=True)[0]
+    dv_dy = torch.autograd.grad(v, y, ones, create_graph=True, retain_graph=True)[0]
+
+    r = torch.sqrt(x ** 2 + y ** 2)
+    nx = x / r  # radial outward normal
+    ny = y / r
+
+    du_dn = nx * du_dx + ny * du_dy
+    dv_dn = nx * dv_dx + ny * dv_dy
+
+    # BGT2 correction: + phi_s/(2r)
+    res_real = du_dn + k * v + u / (2 * r)
+    res_imag = dv_dn - k * u + v / (2 * r)
+
+    return torch.mean(res_real ** 2 + res_imag ** 2)
+
+
 def total_loss(model, interior, boundary, outer, k, config):
     """Compute weighted total loss from all components."""
     loss_pde = pde_residual_loss(model, interior["x"], interior["y"], k)
     loss_bc = neumann_bc_loss(model, boundary["x"], boundary["y"],
                               boundary["nx"], boundary["ny"], k)
-    loss_abc = abc_loss(model, outer["x"], outer["y"],
-                        outer["nx"], outer["ny"], k)
+
+    if getattr(config, "abc_order", 1) == 2:
+        loss_abc = abc_loss_2nd_order(model, outer["x"], outer["y"], k)
+    else:
+        loss_abc = abc_loss(model, outer["x"], outer["y"],
+                            outer["nx"], outer["ny"], k)
 
     total = (config.lambda_pde * loss_pde +
              config.lambda_bc * loss_bc +
