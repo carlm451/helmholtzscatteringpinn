@@ -285,9 +285,60 @@ def _vline_bands(scatterers, x_val):
 # CLI
 # ──────────────────────────────────────────────────────────────
 
+def _download_from_wandb(entity="carlm451", project="helmholtz-pinn-honeycomb",
+                         artifact_path=None, download_dir="checkpoints"):
+    """Download a honeycomb checkpoint from wandb.
+
+    If artifact_path is given, fetch that exact artifact.
+    Otherwise, find the latest finished run and download its model artifact.
+    Returns local path to the .pt file.
+    """
+    try:
+        import wandb
+    except ImportError:
+        sys.exit("wandb is not installed — cannot use --from-wandb")
+
+    api = wandb.Api()
+
+    if artifact_path:
+        print(f"Fetching artifact: {artifact_path}")
+        artifact = api.artifact(artifact_path)
+    else:
+        # Find latest finished run with a logged model artifact
+        print(f"Searching {entity}/{project} for latest finished run...")
+        runs = api.runs(f"{entity}/{project}",
+                        filters={"state": "finished"}, order="-created_at")
+        artifact = None
+        for run in runs:
+            arts = [a for a in run.logged_artifacts() if a.type == "model"]
+            if arts:
+                artifact = arts[-1]  # last logged = lbfgs checkpoint
+                print(f"  Found run: {run.name} ({run.id})")
+                print(f"  Artifact:  {artifact.name}:{artifact.version}")
+                break
+        if artifact is None:
+            sys.exit("No finished runs with model artifacts found in "
+                     f"{entity}/{project}")
+
+    os.makedirs(download_dir, exist_ok=True)
+    local_dir = artifact.download(root=download_dir)
+    # Find the .pt file in downloaded dir
+    pt_files = [f for f in os.listdir(local_dir) if f.endswith(".pt")]
+    if not pt_files:
+        sys.exit(f"No .pt files found in downloaded artifact: {local_dir}")
+    path = os.path.join(local_dir, pt_files[0])
+    print(f"  Downloaded: {path}\n")
+    return path
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="Honeycomb PINN post-training diagnostics")
-    p.add_argument("checkpoint", help="Path to .pt checkpoint")
+    p.add_argument("checkpoint", nargs="?", default=None,
+                   help="Path to .pt checkpoint (optional if --from-wandb)")
+    p.add_argument("--from-wandb", action="store_true",
+                   help="Download latest honeycomb checkpoint from wandb")
+    p.add_argument("--wandb-artifact", type=str, default=None,
+                   help="Explicit wandb artifact path (e.g. entity/project/name:version)")
     p.add_argument("--ka", type=float, default=None,
                    help="Override ka (default: infer from filename)")
     p.add_argument("--output-dir", default="outputs/hc_eval",
@@ -295,7 +346,10 @@ def parse_args():
     p.add_argument("--grid-size", type=int, default=400,
                    help="Evaluation grid resolution (default: 400)")
     p.add_argument("--device", type=str, default=None, help="Device override")
-    return p.parse_args()
+    args = p.parse_args()
+    if not args.checkpoint and not args.from_wandb and not args.wandb_artifact:
+        p.error("provide a checkpoint path, --from-wandb, or --wandb-artifact")
+    return args
 
 
 # ──────────────────────────────────────────────────────────────
@@ -305,10 +359,17 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Resolve checkpoint path
+    checkpoint = args.checkpoint
+    if args.wandb_artifact:
+        checkpoint = _download_from_wandb(artifact_path=args.wandb_artifact)
+    elif args.from_wandb:
+        checkpoint = _download_from_wandb()
+
     # Infer ka from filename
     ka = args.ka
     if ka is None:
-        m = re.search(r"ka(\d+\.?\d*)", args.checkpoint)
+        m = re.search(r"ka(\d+\.?\d*)", checkpoint)
         ka = float(m.group(1)) if m else 3.0
 
     # Build config
@@ -319,7 +380,7 @@ def main():
 
     # Load model
     model = HelmholtzPINN(config).to(config.device)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=config.device,
+    model.load_state_dict(torch.load(checkpoint, map_location=config.device,
                                      weights_only=True))
     domain = ScatteringDomain(config.L, config.scatterers, config.device)
 
