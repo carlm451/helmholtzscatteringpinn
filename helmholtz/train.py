@@ -51,11 +51,22 @@ def _sample_points(domain, config):
     return interior, boundary, outer
 
 
-def save_checkpoint(model, config, phase, output_dir="checkpoints"):
+def save_checkpoint(model, config, phase, output_dir="checkpoints", log_to_wandb=False):
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"helmholtz_ka{config.ka:.2f}_{phase}.pt")
     torch.save(model.state_dict(), path)
     print(f"  Checkpoint saved: {path}")
+
+    if log_to_wandb and wandb is not None and wandb.run is not None:
+        artifact = wandb.Artifact(
+            f"helmholtz-ka{config.ka:.2f}-{phase}",
+            type="model",
+            metadata={"ka": config.ka, "L": config.L, "phase": phase},
+        )
+        artifact.add_file(path)
+        wandb.log_artifact(artifact)
+        print(f"  Artifact logged to wandb: {artifact.name}")
+
     return path
 
 
@@ -235,7 +246,7 @@ def train_lbfgs(model, domain, config, analytic_fn=None, start_epoch=0):
             eval_metrics = _evaluate_and_log(model, domain, config, analytic_fn, global_epoch, "lbfgs")
             tqdm.write(f"  [LBFGS {epoch}] L2_rel={eval_metrics['l2_rel']:.4e}, max_err={eval_metrics['max_err']:.4e}")
 
-    save_checkpoint(model, config, "lbfgs")
+    save_checkpoint(model, config, "lbfgs", log_to_wandb=config.use_wandb)
     return model
 
 
