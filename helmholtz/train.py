@@ -3,8 +3,8 @@
 import torch
 import os
 from tqdm import tqdm
-from losses import total_loss
-from evaluate import evaluate_against_analytic
+from .losses import total_loss
+from .evaluate import evaluate_against_analytic
 
 try:
     import wandb

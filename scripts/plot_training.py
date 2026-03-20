@@ -1,12 +1,14 @@
 """Training curve visualization from wandb run history.
 
 Usage:
-    source .env && .venv/bin/python plot_training.py --run-path cmerrigan-alynix/helmholtz-pinn/le0ttokl
+    source .env && .venv/bin/python scripts/plot_training.py --run-path cmerrigan-alynix/helmholtz-pinn/le0ttokl
 """
 
 import argparse
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -17,9 +19,7 @@ except ImportError:
     print("wandb not installed. Install with: pip install wandb")
     sys.exit(1)
 
-# Reuse styling from visualize.py
-sys.path.insert(0, os.path.dirname(__file__))
-from visualize import _LAYOUT, _TITLE_STYLE
+from helmholtz.visualize import _LAYOUT, _TITLE_STYLE
 
 
 def fetch_history(run_path):

@@ -4,13 +4,13 @@ import argparse
 import math
 import torch
 
-from config import HelmholtzConfig
-from analytic import scattered_field, total_field
-from domain import ScatteringDomain
-from network import HelmholtzPINN
-from train import train, train_adam, train_lbfgs, init_wandb, save_checkpoint
-from evaluate import evaluate_against_analytic
-from visualize import create_zoom_report, plot_comparison
+from helmholtz.config import HelmholtzConfig
+from helmholtz.analytic import scattered_field, total_field
+from helmholtz.domain import ScatteringDomain
+from helmholtz.network import HelmholtzPINN
+from helmholtz.train import train, train_adam, train_lbfgs, init_wandb, save_checkpoint
+from helmholtz.evaluate import evaluate_against_analytic
+from helmholtz.visualize import create_zoom_report, plot_comparison
 
 
 def parse_args():

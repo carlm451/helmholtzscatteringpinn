@@ -1,7 +1,7 @@
 """Comprehensive post-training evaluation suite for HelmholtzPINN.
 
 Usage:
-    .venv/bin/python eval_suite.py checkpoints/helmholtz_ka3.14_lbfgs.pt [--run-id le0ttokl]
+    .venv/bin/python scripts/eval_suite.py checkpoints/helmholtz_ka3.14_lbfgs.pt [--run-id le0ttokl]
 """
 
 import argparse
@@ -9,17 +9,19 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 import torch
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from config import HelmholtzConfig
-from domain import ScatteringDomain
-from network import HelmholtzPINN
-from analytic import scattered_field, scattered_field_gradient
-from evaluate import evaluate_against_analytic, check_symmetry
-from visualize import (
+from helmholtz.config import HelmholtzConfig
+from helmholtz.domain import ScatteringDomain
+from helmholtz.network import HelmholtzPINN
+from helmholtz.analytic import scattered_field, scattered_field_gradient
+from helmholtz.evaluate import evaluate_against_analytic, check_symmetry
+from helmholtz.visualize import (
     _LAYOUT, _TITLE_STYLE, _get_fields_on_grid, _scatterer_circle_trace,
     create_zoom_report,
 )

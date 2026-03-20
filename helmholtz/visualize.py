@@ -175,7 +175,7 @@ def plot_line_cut(model, analytic_fn, config, x_values, y_value=0.0):
     v_pred = v_pred.cpu().numpy()
     pred_mag = np.sqrt(u_pred ** 2 + v_pred ** 2)
 
-    from analytic import scattered_field, total_field
+    from .analytic import scattered_field, total_field
     phi_total = total_field(x_values, np.full_like(x_values, y_value),
                             config.k, config.a, config.n_series_terms)
 

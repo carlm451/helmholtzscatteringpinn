@@ -6,23 +6,16 @@ plus a comparison template for later PINN validation.
 
 import math
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from analytic import incident_field, scattered_field, total_field
-
-# Consistent plot styling across all outputs
-_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif"
-_TITLE_STYLE = dict(font=dict(size=15, color="#1a1a2e"), x=0.01, xanchor="left")
-_LAYOUT = dict(
-    font=dict(family=_FONT, size=13, color="#1a1a2e"),
-    paper_bgcolor="#f8f8fa",
-    plot_bgcolor="#ffffff",
-    margin=dict(t=56, b=48, l=56, r=28),
-    colorway=["#1a56db", "#dc2626", "#059669", "#d97706", "#7c3aed"],
-)
+from helmholtz.analytic import incident_field, scattered_field, total_field
+from helmholtz.visualize import _LAYOUT, _TITLE_STYLE
 
 # ka values spanning sub-wavelength to geometric optics
 KA_VALUES = [0.5, 1.0, math.pi, 2 * math.pi, 3 * math.pi]
