@@ -59,7 +59,7 @@ class HelmholtzConfig:
     eval_grid_size: int = 200
 
     # wandb
-    wandb_project: str = "helmholtz-pinn"
+    wandb_project: str = "helmholtz-pinn-gpu-sweep"
     use_wandb: bool = True
 
     # Device
