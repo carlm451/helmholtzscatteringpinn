@@ -285,7 +285,7 @@ def _vline_bands(scatterers, x_val):
 # CLI
 # ──────────────────────────────────────────────────────────────
 
-def _download_from_wandb(entity="carlm451", project="helmholtz-pinn-honeycomb",
+def _download_from_wandb(entity=None, project="helmholtz-pinn-honeycomb",
                          artifact_path=None, download_dir="checkpoints"):
     """Download a honeycomb checkpoint from wandb.
 
@@ -299,6 +299,8 @@ def _download_from_wandb(entity="carlm451", project="helmholtz-pinn-honeycomb",
         sys.exit("wandb is not installed — cannot use --from-wandb")
 
     api = wandb.Api()
+    if entity is None:
+        entity = os.environ.get("WANDB_ENTITY") or api.viewer.entity
 
     if artifact_path:
         print(f"Fetching artifact: {artifact_path}")
@@ -320,9 +322,9 @@ def _download_from_wandb(entity="carlm451", project="helmholtz-pinn-honeycomb",
             sys.exit("No finished runs with model artifacts found in "
                      f"{entity}/{project}")
 
-    os.makedirs(download_dir, exist_ok=True)
-    local_dir = artifact.download(root=download_dir)
-    # Find the .pt file in downloaded dir
+    # Download to default location (./artifacts/<name>/) to avoid mixing
+    # with existing checkpoints
+    local_dir = artifact.download()
     pt_files = [f for f in os.listdir(local_dir) if f.endswith(".pt")]
     if not pt_files:
         sys.exit(f"No .pt files found in downloaded artifact: {local_dir}")
