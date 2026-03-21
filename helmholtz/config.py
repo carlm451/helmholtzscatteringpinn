@@ -14,6 +14,12 @@ class HelmholtzConfig:
     L: float = 3.0
     scatterers: List[Tuple[float, float, float]] = field(default_factory=lambda: [(0.0, 0.0, 1.0)])
 
+    # Honeycomb structured scatterer
+    use_honeycomb: bool = False
+    honeycomb_r_s: float = None   # small circle radius (default: 0.15*a)
+    honeycomb_d: float = None     # lattice constant (default: 0.4*a)
+    cluster_radius: float = None  # set in __post_init__
+
     # Network
     n_fourier_features: int = 64
     fourier_sigma: float = None  # set in __post_init__
@@ -82,6 +88,17 @@ class HelmholtzConfig:
             else:
                 self.device = "cpu"
 
+        # Honeycomb: replace single scatterer with 19-circle lattice
+        if self.use_honeycomb:
+            from .honeycomb import generate_honeycomb_lattice
+            self.scatterers = generate_honeycomb_lattice(
+                self.a, self.honeycomb_r_s, self.honeycomb_d
+            )
+            self.cluster_radius = self.a
+
+        if self.cluster_radius is None:
+            self.cluster_radius = self.scatterers[0][2]
+
     @classmethod
     def ka_pi(cls, **kwargs):
         return cls(ka=math.pi, **kwargs)
@@ -114,6 +131,21 @@ class HelmholtzConfig:
         )
         defaults.update(kwargs)
         return cls(ka=3 * math.pi, **defaults)
+
+    @classmethod
+    def honeycomb_ka3(cls, **kwargs):
+        defaults = dict(
+            ka=3.0, L=4.0, use_honeycomb=True,
+            n_interior=20000, n_boundary=250, n_outer=600,
+            n_hidden_layers=6, n_fourier_features=128,
+            sampling_strategy="cluster_bias",
+            lambda_bc=20.0,
+            outer_boundary="circle", abc_order=2,
+            adam_epochs=20000, lbfgs_epochs=300,
+            wandb_project="helmholtz-pinn-honeycomb",
+        )
+        defaults.update(kwargs)
+        return cls(**defaults)
 
     def to_dict(self):
         d = {}
