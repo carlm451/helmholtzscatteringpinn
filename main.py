@@ -52,6 +52,7 @@ def parse_args():
     parser.add_argument("--honeycomb-d", type=float, default=None, help="Lattice constant")
     # wandb
     parser.add_argument("--run-name", type=str, default=None, help="wandb run name override")
+    parser.add_argument("--wandb-project", type=str, default=None, help="wandb project name override")
     return parser.parse_args()
 
 
@@ -112,6 +113,8 @@ def get_config(args):
     }
     if args.use_rad:
         overrides["use_rad"] = True
+    if args.wandb_project:
+        overrides["wandb_project"] = args.wandb_project
     for attr, val in overrides.items():
         if val is not None:
             setattr(config, attr, val)

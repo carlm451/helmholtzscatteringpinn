@@ -518,6 +518,10 @@ def parse_args():
     parser.add_argument("--grid-size", type=int, default=400, help="Evaluation grid size")
     parser.add_argument("--device", type=str, default=None, help="Device override")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Base output directory")
+    parser.add_argument("--outer-boundary", type=str, default="square",
+                        help="Outer boundary shape: square or circle")
+    parser.add_argument("--abc-order", type=int, default=1,
+                        help="ABC order: 1 or 2 (BGT2)")
     return parser.parse_args()
 
 
@@ -543,8 +547,13 @@ def main():
         config = HelmholtzConfig.ka_pi(**kwargs)
     elif abs(ka - 2 * math.pi) < 0.01:
         config = HelmholtzConfig.ka_2pi(**kwargs)
+    elif abs(ka - 3 * math.pi) < 0.01:
+        config = HelmholtzConfig.ka_3pi(**kwargs)
     else:
         config = HelmholtzConfig(ka=ka, **kwargs)
+
+    config.outer_boundary = args.outer_boundary
+    config.abc_order = args.abc_order
 
     print(f"Eval suite — ka={config.ka:.4f}, L={config.L}, device={config.device}")
 

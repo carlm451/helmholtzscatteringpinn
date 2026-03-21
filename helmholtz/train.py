@@ -54,6 +54,8 @@ def _sample_points(domain, config):
 
 def _checkpoint_tag(config):
     """Build a descriptive tag for checkpoint filenames and artifact names."""
+    from datetime import datetime
+    ts = datetime.now().strftime("%m%d_%H%M")
     tag = f"ka{config.ka:.2f}_L{config.L:.1f}"
     if getattr(config, "use_honeycomb", False):
         tag = f"hc_{tag}"
@@ -61,6 +63,7 @@ def _checkpoint_tag(config):
         tag += "_circ"
     if getattr(config, "abc_order", 1) == 2:
         tag += "_bgt2"
+    tag += f"_{ts}"
     return tag
 
 
