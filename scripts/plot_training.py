@@ -49,6 +49,11 @@ def plot_loss_curves(rows, run_id, resample_every=2000):
             bc.append(r.get("loss/bc"))
             abc.append(r.get("loss/abc"))
 
+    # Sort by step to prevent wraparound lines
+    if steps:
+        sorted_data = sorted(zip(steps, total, pde, bc, abc))
+        steps, total, pde, bc, abc = [list(x) for x in zip(*sorted_data)]
+
     fig = go.Figure()
     for name, vals, color in [
         ("Total", total, "#1a56db"),
@@ -89,6 +94,11 @@ def plot_eval_metrics(rows, run_id):
             l2_rel.append(l2)
             max_err.append(r.get("eval/max_err"))
 
+    # Sort by step to prevent wraparound lines
+    if steps:
+        sorted_data = sorted(zip(steps, l2_rel, max_err))
+        steps, l2_rel, max_err = [list(x) for x in zip(*sorted_data)]
+
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     fig.add_trace(go.Scatter(
@@ -126,6 +136,14 @@ def plot_lr_gradnorm(rows, run_id):
         if gn is not None:
             steps_gn.append(s)
             gn_vals.append(gn)
+
+    # Sort by step to prevent wraparound lines
+    if steps_lr:
+        steps_lr, lr_vals = zip(*sorted(zip(steps_lr, lr_vals)))
+        steps_lr, lr_vals = list(steps_lr), list(lr_vals)
+    if steps_gn:
+        steps_gn, gn_vals = zip(*sorted(zip(steps_gn, gn_vals)))
+        steps_gn, gn_vals = list(steps_gn), list(gn_vals)
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 

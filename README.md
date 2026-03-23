@@ -1,6 +1,27 @@
 # HelmholtzPINN
 
-Physics-informed neural network for 2D acoustic scattering off a rigid circular cylinder.
+Physics-informed neural network for 2D acoustic scattering off a rigid circular cylinder. Trained and validated across wavenumbers ka = 0.5 to 2π, achieving 2–8% L2 error against the exact Bessel/Hankel series solution.
+
+**[Live Dashboard](https://carlm451.github.io/helmholtz/)** · **[Slides](https://carlm451.github.io/helmholtz/slides.html)** · **[PDF Report](https://carlm451.github.io/helmholtz/HelmholtzPINN_Slides.pdf)**
+
+## Key Results
+
+| ka | L2 Relative Error | Mean Error | Max Error | Network | Training | Wall Time |
+|----|-------------------|------------|-----------|---------|----------|-----------|
+| 0.5 | 8.23% | 1.90% | 4.04% | 256 / 4L / 64ff | 10K+200 | 12 min |
+| 1.0 | 3.57% | 1.34% | 2.99% | 256 / 4L / 64ff | 10K+200 | 13 min |
+| π | 2.41% | 1.09% | 2.96% | 256 / 4L / 64ff | 10K+200 | 17 min |
+| 2π | **2.00%** | **0.93%** | 4.37% | 384 / 6L / 96ff | 50K+300 | 259 min |
+
+All runs: circle boundary, BGT2 ABC, L = 3.0, trained on 4× NVIDIA RTX 4000 Ada.
+
+## PINNs as a Multi-Scale Probe
+
+This project tests whether a PINN can **dynamically resolve physical fields at arbitrary length scales** — effectively zooming in to reveal finer spatial structure.
+
+**Where PINNs excel:** For low-to-moderate spatial frequency (ka ≤ π), the PINN converges to 2–3% L2 error in 12–17 minutes. At these scales, PINNs offer genuine advantages over mesh-based solvers: continuous field access at any coordinate, no mesh generation, and physics enforced by construction. The network is a differentiable, resolution-independent surrogate — it can be queried anywhere without interpolation or remeshing.
+
+**The compute wall:** As ka grows, training cost scales steeply: ka=2π needed 5× more epochs and a 50% wider network (259 min vs 12 min). At ka=3π, a 10+ hour run plateaued at 68% L2 despite loss dropping 5 orders of magnitude. Zooming in to finer features is equivalent to probing higher spatial frequencies, and the network faces a fundamental resolution–compute tradeoff. At the frontier, **compute budget — not architecture or loss design — is the binding constraint** (the convergent 2π run used default loss weights but 2.5× more epochs: 49%→2%).
 
 ## Background
 
@@ -8,30 +29,20 @@ When a plane wave hits a solid cylinder, it produces a scattered wave field gove
 
 $$\nabla^2 \phi_s + k^2 \phi_s = 0$$
 
-where $\phi_s$ is the scattered pressure field and $k = \omega/c$ is the wavenumber. The key dimensionless parameter is **ka** (wavenumber times cylinder radius) which controls the scattering regime: Rayleigh ($ka \ll 1$), resonance ($ka \sim 1$), and geometric optics ($ka \gg 1$).
+The key parameter **ka** (wavenumber × radius) controls the scattering regime. The analytic Bessel/Hankel series solution provides pixel-level validation.
 
 **Boundary conditions:**
-- **Sound-hard (Neumann) BC** on the cylinder surface: $\partial\phi_{total}/\partial n = 0$
-- **Absorbing BC (ABC)** on the outer truncation boundary to approximate the Sommerfeld radiation condition
-
-The analytic solution exists as a Bessel/Hankel series expansion, making this an ideal benchmark for validating numerical methods.
-
-## Why a PINN?
-
-A Physics-Informed Neural Network learns the scattered field by minimizing PDE residuals, boundary condition violations, and ABC residuals simultaneously. Advantages over traditional mesh-based methods:
-
-- **Continuous field representation** -- query the solution at any point without interpolation
-- **Zoom in** to fine features (shadow boundary, Poisson bright spot) without remeshing
-- **Meshfree** -- no mesh generation or refinement needed
-
-The network maps $(x, y) \to (u, v)$ where $u = \text{Re}(\phi_s)$ and $v = \text{Im}(\phi_s)$.
+- **Neumann BC** on the cylinder: $\partial\phi_{total}/\partial n = 0$
+- **BGT2 ABC** on the circular outer boundary: $\partial\phi_s/\partial r - ik\phi_s + \phi_s/2r = 0$
 
 ## Architecture
 
-- **Random Fourier features** to overcome spectral bias at high wavenumbers
-- **Residual MLP** with configurable depth/width
-- **Scattered-field formulation** (learns $\phi_s$ only; total field = incident + scattered)
-- **BGT2 absorbing boundary condition** on a circular truncation boundary (preferred) or first-order ABC on a square boundary
+- **Random Fourier features** with σ = k to overcome spectral bias
+- **Residual MLP** with skip connections (configurable depth/width)
+- **Scattered-field formulation** — network learns $\phi_s$ only
+- **Two-phase optimization** — Adam (cosine LR) → L-BFGS (strong Wolfe)
+
+The network maps $(x, y) \to (u, v)$ where $u = \text{Re}(\phi_s)$ and $v = \text{Im}(\phi_s)$.
 
 ## Stack
 
@@ -41,13 +52,13 @@ The network maps $(x, y) \to (u, v)$ where $u = \text{Re}(\phi_s)$ and $v = \tex
 | Analytic solution | scipy (Bessel/Hankel functions) |
 | Visualization | Plotly (interactive HTML) |
 | Experiment tracking | Weights & Biases |
+| Dashboard/slides | Custom HTML generation |
 
 ## Repo Structure
 
 ```
 main.py                             # CLI entry point
 helmholtz/                          # Core library package
-  __init__.py
   config.py                         # HelmholtzConfig dataclass
   network.py                        # FourierFeatureLayer + HelmholtzPINN
   domain.py                         # ScatteringDomain (sampling)
@@ -57,11 +68,12 @@ helmholtz/                          # Core library package
   analytic.py                       # Bessel/Hankel series solution
   visualize.py                      # Plotly comparison plots + zoom reports
 scripts/                            # Standalone analysis tools
-  eval_suite.py                     # Comprehensive post-training evaluation
-  plot_training.py                  # Training curve plots from wandb
-  visualize_analytic_sweep.py       # Multi-ka analytic field visualization
-docs/                               # Working notes (gitignored)
-run_sweep.sh                        # Hyperparameter sweep launcher
+  build_report.py                   # Dashboard + slides HTML generator
+  slides_to_pdf.py                  # Playwright-based PDF export
+  eval_suite.py                     # Post-training evaluation suite
+  plot_training.py                  # Training curves from wandb
+  run_ablation.sh                   # Ablation study launcher
+docs/                               # Generated dashboard + slides
 ```
 
 ## Quick Start
@@ -75,34 +87,27 @@ pip install torch scipy plotly wandb tqdm
 # Train with default settings (ka=pi, circle+BGT2)
 python main.py
 
-# Train with specific ka and options
-python main.py --ka 6.28 --outer-boundary circle --abc-order 2 --no-wandb
+# Train with specific ka
+python main.py --ka 6.28 --outer-boundary circle --abc-order 2
 
 # Eval-only from checkpoint
 python main.py --eval-only checkpoints/helmholtz_ka3.14_lbfgs.pt
 
-# Generate analytic solution plots only
-python main.py --analytic-only --ka 3.14159
+# Build dashboard + slides
+source .env && python scripts/build_report.py
 
-# Post-training evaluation suite
-python scripts/eval_suite.py checkpoints/helmholtz_ka3.14_lbfgs.pt --run-id myrun
-
-# Plot training curves from wandb
-source .env && python scripts/plot_training.py --run-path entity/helmholtz-pinn/run_id
-
-# Multi-ka analytic sweep visualization
-python scripts/visualize_analytic_sweep.py
+# Export slides to PDF
+python scripts/slides_to_pdf.py
 ```
 
-## Key Results
+## Extension: Honeycomb Acoustic Shield
 
-At $ka = \pi$ with circle boundary + BGT2 ABC:
-- L2 relative error vs analytic: ~$10^{-2}$ range
-- Captures shadow boundary, Poisson bright spot, and wake fringes
-- Training: ~10k Adam epochs + ~200 L-BFGS epochs on Apple MPS
+A 19-circle hexagonal lattice scatterer at ka = 2, trained as a pure PINN with no analytic reference. Achieves total loss 9.06e-6 and demonstrates acoustic shielding: |φ_total| < 0.003 inside the cluster.
 
 ## References
 
-- Raissi, Perdikaris, Karniadakis. "Physics-informed neural networks." *Journal of Computational Physics*, 2019.
-- Mei, C.C. "Mathematical Analysis in Engineering." Cambridge University Press. (Helmholtz scattering derivation)
-- Bayliss, Gunzburger, Turkel. "Boundary conditions for the numerical solution of elliptic equations in exterior regions." *SIAM J. Appl. Math.*, 1982. (BGT absorbing boundary conditions)
+- Raissi, Perdikaris, Karniadakis. "Physics-informed neural networks." *J. Comput. Phys.* 378, 686–707 (2019).
+- Tancik et al. "Fourier features let networks learn high frequency functions in low dimensional domains." *NeurIPS* (2020).
+- Bayliss, Gunzburger, Turkel. "Boundary conditions for the numerical solution of elliptic equations in exterior regions." *SIAM J. Appl. Math.* 42(2), 430–451 (1982).
+- Wang, Yu, Perdikaris. "When and why PINNs fail to train: A neural tangent kernel perspective." *J. Comput. Phys.* 449, 110768 (2022).
+- Morse, Ingard. *Theoretical Acoustics.* Princeton University Press (1968). Ch. 8.

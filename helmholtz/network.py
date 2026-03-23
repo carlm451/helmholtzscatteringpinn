@@ -59,11 +59,15 @@ class HelmholtzPINN(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.fourier = FourierFeatureLayer(
-            n_features=config.n_fourier_features,
-            sigma=config.fourier_sigma,
-        )
-        input_dim = 2 * config.n_fourier_features
+        if config.use_fourier_features:
+            self.fourier = FourierFeatureLayer(
+                n_features=config.n_fourier_features,
+                sigma=config.fourier_sigma,
+            )
+            input_dim = 2 * config.n_fourier_features
+        else:
+            self.fourier = None
+            input_dim = 2
         hidden = config.n_hidden_neurons
         activation_fn = _get_activation(config.activation)
 
@@ -93,6 +97,6 @@ class HelmholtzPINN(nn.Module):
     def forward(self, x, y):
         """Forward pass. x, y: (N,) tensors -> returns (u, v) each (N,)."""
         coords = torch.stack([x, y], dim=-1)  # (N, 2)
-        out = self.fourier(coords)
+        out = self.fourier(coords) if self.fourier is not None else coords
         out = self.net(out)  # (N, 2)
         return out[:, 0], out[:, 1]

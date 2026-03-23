@@ -27,6 +27,7 @@ class HelmholtzConfig:
     n_hidden_neurons: int = 256
     activation: str = "tanh"
     use_residual: bool = True
+    use_fourier_features: bool = True
 
     # Sampling
     n_interior: int = 10000

@@ -150,6 +150,16 @@ def plot_comparison(model, domain, config, analytic_fn,
                 showlegend=False,
             ), row=1, col=col)
 
+    # Add outer ABC boundary circle (dashed black)
+    if getattr(config, "outer_boundary", "square") == "circle":
+        theta = np.linspace(0, 2 * np.pi, 200)
+        for col in range(1, 4):
+            fig.add_trace(go.Scatter(
+                x=config.L * np.cos(theta), y=config.L * np.sin(theta),
+                mode="lines", line=dict(color="black", width=1, dash="dash"),
+                showlegend=False,
+            ), row=1, col=col)
+
     fig.update_layout(
         **_LAYOUT,
         title=dict(text=f"Helmholtz Scattering ka={config.ka:.2f} — {label}", **_TITLE_STYLE),

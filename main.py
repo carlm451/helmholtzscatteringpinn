@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument("--outer-boundary", type=str, default=None, help="Outer boundary shape: square or circle")
     parser.add_argument("--abc-order", type=int, default=None, help="ABC order: 1 or 2 (BGT2)")
     # Honeycomb structured scatterer
+    parser.add_argument("--no-fourier", action="store_true", help="Disable Fourier features (plain MLP baseline)")
     parser.add_argument("--honeycomb", action="store_true", help="Use honeycomb lattice scatterer")
     parser.add_argument("--honeycomb-rs", type=float, default=None, help="Small circle radius")
     parser.add_argument("--honeycomb-d", type=float, default=None, help="Lattice constant")
@@ -113,6 +114,8 @@ def get_config(args):
     }
     if args.use_rad:
         overrides["use_rad"] = True
+    if args.no_fourier:
+        overrides["use_fourier_features"] = False
     if args.wandb_project:
         overrides["wandb_project"] = args.wandb_project
     for attr, val in overrides.items():
@@ -219,6 +222,11 @@ def _save_pinn_only_plots(model, domain, config, output_dir="outputs"):
                 x=cx + r * np.cos(theta_c), y=cy + r * np.sin(theta_c),
                 mode="lines", line=dict(color="white", width=1.5), showlegend=False,
             ))
+        if getattr(config, "outer_boundary", "square") == "circle":
+            fig.add_trace(go.Scatter(
+                x=config.L * np.cos(theta_c), y=config.L * np.sin(theta_c),
+                mode="lines", line=dict(color="black", width=1, dash="dash"), showlegend=False,
+            ))
         fig.update_layout(
             title=f"Honeycomb PINN — {name} — ka={config.ka:.2f}",
             xaxis_title="x", yaxis_title="y",
@@ -237,8 +245,8 @@ def main():
     config = get_config(args)
 
     print(f"HelmholtzPINN — ka={config.ka:.4f}, k={config.k:.4f}, device={config.device}")
-    print(f"  Network: {config.n_hidden_layers} layers x {config.n_hidden_neurons} neurons, "
-          f"{config.n_fourier_features} Fourier features")
+    ff_str = f"{config.n_fourier_features} Fourier features" if config.use_fourier_features else "no Fourier features (plain MLP)"
+    print(f"  Network: {config.n_hidden_layers} layers x {config.n_hidden_neurons} neurons, {ff_str}")
     print(f"  Sampling: {config.n_interior} interior, {config.n_boundary} BC, {config.n_outer} ABC")
     print(f"  Strategy: {config.sampling_strategy}, outer={config.outer_boundary}, "
           f"ABC order={config.abc_order}, RAD={config.use_rad}")
