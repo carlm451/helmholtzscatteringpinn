@@ -2,7 +2,7 @@
 
 Physics-informed neural network for 2D acoustic scattering off a rigid circular cylinder. Trained and validated across wavenumbers ka = 0.5 to 2π, achieving 2–8% L2 error against the exact Bessel/Hankel series solution.
 
-**[Live Dashboard](https://carlm451.github.io/helmholtz/)** · **[Slides](https://carlm451.github.io/helmholtz/slides.html)** · **[PDF Report](https://carlm451.github.io/helmholtz/HelmholtzPINN_Slides.pdf)**
+Dashboard, slides, and PDF report can be regenerated locally — see [Quick Start](#quick-start).
 
 ## Key Results
 
@@ -66,14 +66,18 @@ helmholtz/                          # Core library package
   train.py                          # Adam + L-BFGS training loop
   evaluate.py                       # Evaluation metrics vs analytic
   analytic.py                       # Bessel/Hankel series solution
+  honeycomb.py                      # Honeycomb structured scatterer
   visualize.py                      # Plotly comparison plots + zoom reports
 scripts/                            # Standalone analysis tools
   build_report.py                   # Dashboard + slides HTML generator
   slides_to_pdf.py                  # Playwright-based PDF export
   eval_suite.py                     # Post-training evaluation suite
+  honeycomb_eval.py                 # Honeycomb scatterer evaluation
   plot_training.py                  # Training curves from wandb
+  plot_ablation.py                  # Ablation study plotting
+  visualize_analytic_sweep.py       # Multi-ka analytic field visualization
   run_ablation.sh                   # Ablation study launcher
-docs/                               # Generated dashboard + slides
+  run_honeycomb_intensive.sh        # Honeycomb intensive sweep
 ```
 
 ## Quick Start

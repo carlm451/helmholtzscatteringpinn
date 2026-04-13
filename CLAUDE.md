@@ -54,10 +54,15 @@ helmholtz/               # Core package
   train.py               # Adam + L-BFGS training loop + wandb
   evaluate.py            # L2/max error vs analytic
   analytic.py            # Bessel/Hankel series (numpy/scipy)
+  honeycomb.py           # Honeycomb structured scatterer
   visualize.py           # Plotly plots + zoom report
 scripts/                 # Standalone tools
+  build_report.py        # Dashboard + slides HTML generator
+  slides_to_pdf.py       # Playwright-based PDF export
   eval_suite.py          # 9-step post-training eval with diagnostics
+  honeycomb_eval.py      # Honeycomb scatterer evaluation
   plot_training.py       # Training curves from wandb history
+  plot_ablation.py       # Ablation study plotting
   visualize_analytic_sweep.py  # Multi-ka analytic fields
 ```
 
